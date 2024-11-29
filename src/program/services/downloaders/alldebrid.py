@@ -28,13 +28,29 @@ from .shared import DownloaderBase, premium_days_left
 class AllDebridError(Exception):
     """Base exception for AllDebrid related errors"""
 
+
 class AllDebridBaseRequestParameters(BaseRequestParameters):
     """AllDebrid base request parameters"""
+
     agent: Optional[str] = None
 
+
 class AllDebridRequestHandler(BaseRequestHandler):
-    def __init__(self, session: Session, base_url: str, base_params: AllDebridBaseRequestParameters, request_logging: bool = False):
-        super().__init__(session, response_type=ResponseType.DICT, base_url=base_url, base_params=base_params, custom_exception=AllDebridError, request_logging=request_logging)
+    def __init__(
+        self,
+        session: Session,
+        base_url: str,
+        base_params: AllDebridBaseRequestParameters,
+        request_logging: bool = False,
+    ):
+        super().__init__(
+            session,
+            response_type=ResponseType.DICT,
+            base_url=base_url,
+            base_params=base_params,
+            custom_exception=AllDebridError,
+            request_logging=request_logging,
+        )
 
     def execute(self, method: HttpMethod, endpoint: str, **kwargs) -> dict:
         response = super()._request(method, endpoint, **kwargs)
@@ -42,8 +58,10 @@ class AllDebridRequestHandler(BaseRequestHandler):
             raise AllDebridError("Invalid response from AllDebrid")
         return response.data["data"]
 
+
 class AllDebridAPI:
     """Handles AllDebrid API communication"""
+
     BASE_URL = "https://api.alldebrid.com/v4"
     AGENT = "Riven"
 
@@ -51,14 +69,14 @@ class AllDebridAPI:
         self.api_key = api_key
         rate_limit_params = get_rate_limit_params(per_minute=600, per_second=12)
         self.session = create_service_session(rate_limit_params=rate_limit_params)
-        self.session.headers.update({
-            "Authorization": f"Bearer {api_key}"
-        })
+        self.session.headers.update({"Authorization": f"Bearer {api_key}"})
         if proxy_url:
             self.session.proxies = {"http": proxy_url, "https": proxy_url}
         base_params = AllDebridBaseRequestParameters()
         base_params.agent = self.AGENT
-        self.request_handler = AllDebridRequestHandler(self.session, self.BASE_URL, base_params)
+        self.request_handler = AllDebridRequestHandler(
+            self.session, self.BASE_URL, base_params
+        )
 
 
 class AllDebridDownloader(DownloaderBase):
@@ -80,7 +98,7 @@ class AllDebridDownloader(DownloaderBase):
 
         self.api = AllDebridAPI(
             api_key=self.settings.api_key,
-            proxy_url=self.PROXY_URL if self.PROXY_URL else None
+            proxy_url=self.PROXY_URL if self.PROXY_URL else None,
         )
 
         if not self._validate_premium():
@@ -118,7 +136,9 @@ class AllDebridDownloader(DownloaderBase):
             logger.error(f"Failed to validate premium status: {e}")
         return False
 
-    def get_instant_availability(self, infohash: str, item_type: str) -> Optional[TorrentContainer]:
+    def get_instant_availability(
+        self, infohash: str, item_type: str
+    ) -> Optional[TorrentContainer]:
         """
         Get instant availability for a single infohash
         Required by DownloaderBase
@@ -132,9 +152,16 @@ class AllDebridDownloader(DownloaderBase):
             info = self.get_torrent_info(torrent_id)
             if info.status == "Ready":
                 files = self.get_files_and_links(torrent_id)
-                processed_files = [DebridFile.create(filename=file["n"], filesize_bytes=file["s"], filetype=item_type) for file in files]
+                processed_files = [
+                    DebridFile.create(
+                        filename=file["n"], filesize_bytes=file["s"], filetype=item_type
+                    )
+                    for file in files
+                ]
                 if processed_files is not None:
-                    return_value = TorrentContainer(infohash=infohash, files=processed_files)
+                    return_value = TorrentContainer(
+                        infohash=infohash, files=processed_files
+                    )
         except Exception as e:
             logger.error(f"Failed to get instant availability: {e}")
         finally:
@@ -152,9 +179,7 @@ class AllDebridDownloader(DownloaderBase):
 
         try:
             response = self.api.request_handler.execute(
-                HttpMethod.GET,
-                "magnet/upload",
-                params={"magnets[]": infohash}
+                HttpMethod.GET, "magnet/upload", params={"magnets[]": infohash}
             )
             magnet_info = response.get("magnets", [])[0]
             torrent_id = magnet_info.get("id")
@@ -190,7 +215,9 @@ class AllDebridDownloader(DownloaderBase):
             raise AllDebridError("Downloader not properly initialized")
 
         try:
-            response = self.api.request_handler.execute(HttpMethod.GET, "magnet/status", params={"id": torrent_id})
+            response = self.api.request_handler.execute(
+                HttpMethod.GET, "magnet/status", params={"id": torrent_id}
+            )
             info = response.get("magnets", {})
             if "filename" not in info:
                 raise AllDebridError("Invalid torrent info response")
@@ -200,7 +227,11 @@ class AllDebridDownloader(DownloaderBase):
                 status=info["status"],
                 bytes=info["size"],
                 created_at=info["uploadDate"],
-                progress=(info["size"] / info["downloaded"]) if info["downloaded"] != 0 else 0
+                progress=(
+                    (info["size"] / info["downloaded"])
+                    if info["downloaded"] != 0
+                    else 0
+                ),
             )
         except Exception as e:
             logger.error(f"Failed to get torrent info for {torrent_id}: {e}")
@@ -212,7 +243,9 @@ class AllDebridDownloader(DownloaderBase):
         Required by DownloaderBase
         """
         try:
-            self.api.request_handler.execute(HttpMethod.GET, "magnet/delete", params={"id": torrent_id})
+            self.api.request_handler.execute(
+                HttpMethod.GET, "magnet/delete", params={"id": torrent_id}
+            )
         except Exception as e:
             logger.error(f"Failed to delete torrent {torrent_id}: {e}")
             raise
@@ -223,11 +256,12 @@ class AllDebridDownloader(DownloaderBase):
         """
         try:
             response = self.api.request_handler.execute(
-                HttpMethod.GET,
-                "magnet/files",
-                params={"id[]": torrent_id}
+                HttpMethod.GET, "magnet/files", params={"id[]": torrent_id}
             )
-            magnet_info = next((info for info in response.get("magnets") if info["id"] == torrent_id), {})
+            magnet_info = next(
+                (info for info in response.get("magnets") if info["id"] == torrent_id),
+                {},
+            )
             return magnet_info.get("files", {})
 
         except Exception as e:
